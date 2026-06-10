@@ -1,6 +1,6 @@
 // vars/eksDeployPipeline.groovy
 //
-// Public pipeline: build container, push to ECR, deploy to EKS, wait rollout.
+// Public pipeline: clone → build → push ECR → deploy to EKS → wait rollout.
 //
 //   @Library('shared-lib') _
 //   eksDeployPipeline(
@@ -35,6 +35,10 @@ def call(Map cfg) {
     }
 
     stages {
+      stage('Checkout') {
+        steps { checkout scm }
+      }
+
       stage('Build') {
         steps {
           sh 'docker build -t $IMAGE .'

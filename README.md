@@ -28,7 +28,7 @@ and EKS deployment.
     ├── terraform.Jenkinsfile
     ├── sonarqube.Jenkinsfile
     ├── zap.Jenkinsfile
-    └── eks-deploy.Jenkinsfile
+    └── service-deploy.Jenkinsfile        # build → push ECR → deploy EKS
 ```
 
 ## Register in Jenkins
