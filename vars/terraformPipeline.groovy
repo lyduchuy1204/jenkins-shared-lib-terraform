@@ -1,55 +1,40 @@
 // vars/terraformPipeline.groovy
 //
-// Reusable Terraform pipeline.
-// Usage from a consumer Jenkinsfile:
+// Public pipeline: Terraform plan/apply per environment with S3 archive.
 //
-//   @Library('terraform-shared-lib') _
-//   terraformPipeline(env: 'uat', workingDir: 'environments/uat',
-//                     s3Bucket: 'my-cicd-artifacts')
+//   @Library('shared-lib') _
+//   terraformPipeline(
+//     environment: params.ENVIRONMENT,   // uat | staging | prod
+//     s3Bucket:    'my-cicd-artifacts',
+//     repoName:    'iac-terraform-showcase-aws',
+//   )
+
+import com.portfolio.tf.Archiver
 
 def call(Map cfg) {
-  def env        = cfg.env        ?: error('env is required (uat|staging|prod)')
-  def workingDir = cfg.workingDir ?: "environments/${env}"
-  def s3Bucket   = cfg.s3Bucket   ?: error('s3Bucket is required')
-  def agentLabel = "tf-${env}"
-  def repoName   = (cfg.repoName ?: env.JOB_NAME ?: 'unknown')
-                     .toString().replaceAll('/', '_')
+  def environment = cfg.environment ?: error('environment is required')
+  def workingDir  = cfg.workingDir  ?: "environments/${environment}"
+  def s3Bucket    = cfg.s3Bucket    ?: error('s3Bucket is required')
+  def repoName    = cfg.repoName    ?: 'unknown'
 
   pipeline {
-    agent { label agentLabel }
+    agent { label "tf-${environment}" }
 
-    options {
-      timestamps()
-      ansiColor('xterm')
-      timeout(time: 30, unit: 'MINUTES')
-      disableConcurrentBuilds()
-    }
+    options { timeout(time: 30, unit: 'MINUTES') }
 
     environment {
       TF_IN_AUTOMATION = '1'
       TF_INPUT         = '0'
-      ENV              = "${env}"
       WORKDIR          = "${workingDir}"
       S3_BUCKET        = "${s3Bucket}"
-      S3_PREFIX        = "datalake/${env}/${repoName}/${BUILD_NUMBER}"
+      S3_PREFIX        = "datalake/${environment}/${repoName}/${BUILD_NUMBER}"
     }
 
     stages {
-      stage('Checkout') {
-        steps { checkout scm }
-      }
-
-      stage('Init') {
+      stage('Init & Validate') {
         steps {
           dir(env.WORKDIR) {
             sh 'terraform init -reconfigure'
-          }
-        }
-      }
-
-      stage('Validate') {
-        steps {
-          dir(env.WORKDIR) {
             sh 'terraform fmt -check -recursive'
             sh 'terraform validate'
           }
@@ -64,15 +49,13 @@ def call(Map cfg) {
         }
       }
 
-      stage('Approve') {
-        when { expression { return env.ENV == 'prod' } }
-        steps {
-          input message: "Apply Terraform to ${env.ENV}?", ok: 'Apply'
-        }
+      stage('Approve (prod)') {
+        when { expression { environment == 'prod' && params.APPLY } }
+        steps { input message: 'Apply to prod?', ok: 'Apply' }
       }
 
       stage('Apply') {
-        when { expression { return params.APPLY == true } }
+        when { expression { params.APPLY == true } }
         steps {
           dir(env.WORKDIR) {
             sh 'terraform apply -auto-approve tfplan'
@@ -81,25 +64,12 @@ def call(Map cfg) {
         }
       }
 
-      stage('Archive to S3') {
+      stage('Archive') {
         steps {
-          tfArchiveS3(
-            workingDir: env.WORKDIR,
-            bucket:     env.S3_BUCKET,
-            prefix:     env.S3_PREFIX,
-          )
+          script {
+            new Archiver(this).archive(env.WORKDIR, env.S3_BUCKET, env.S3_PREFIX)
+          }
         }
-      }
-    }
-
-    post {
-      always {
-        archiveArtifacts artifacts: "${workingDir}/plan.txt," +
-                                    "${workingDir}/outputs.json",
-                         allowEmptyArchive: true
-      }
-      failure {
-        echo "Pipeline FAILED on env=${env.ENV} build=${env.BUILD_NUMBER}"
       }
     }
   }

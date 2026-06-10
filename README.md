@@ -1,53 +1,72 @@
-# jenkins-shared-lib-terraform
+# jenkins-shared-lib
 
-Minimal Jenkins **shared library** + sample `Jenkinsfile` to drive Terraform
-deploys per environment, with archived artifacts on S3.
+Minimal Jenkins shared library with reusable pipelines for IaC, SAST, DAST,
+and EKS deployment.
 
-## Design at a glance
+## Pipelines (`vars/` — public API)
 
-- **Per-env agent**: each stage runs on a host labeled `tf-<env>` (`tf-uat`,
-  `tf-staging`, `tf-prod`). Hosts are isolated by env (creds, network, IAM).
-- **Shared library**: pipeline logic lives in `vars/terraformPipeline.groovy`
-  so consumer repos only carry a 5-line `Jenkinsfile`.
-- **S3 archive (datalake layout)**: after `plan`/`apply`, key files
-  (`*.tf`, `terraform.tfvars` redacted, `tfplan`, `terraform.tfstate.backup`,
-  `outputs.json`) are uploaded to:
-  ```
-  s3://<bucket>/datalake/<env>/<repo>/<build>/...
-  ```
+| Pipeline             | Purpose                                        | Agent label        |
+| -------------------- | ---------------------------------------------- | ------------------ |
+| `terraformPipeline`  | Terraform plan/apply per env, archive to S3    | `tf-<env>`         |
+| `sonarqubePipeline`  | SAST scan + SonarQube Quality Gate             | `sast`             |
+| `zapPipeline`        | DAST scan with OWASP ZAP baseline              | `dast`             |
+| `eksDeployPipeline`  | Build → push ECR → deploy EKS → wait rollout   | `eks-<env>`        |
 
-## Repo layout
+## Layout
 
 ```
-jenkins-shared-lib-terraform/
-├── Jenkinsfile                       # demo pipeline (uses the lib below)
-├── vars/
-│   ├── terraformPipeline.groovy      # entry: terraformPipeline(env: 'uat')
-│   └── tfArchiveS3.groovy            # helper: archive artifacts to S3
-└── README.md
+.
+├── vars/                                # public pipelines (call from Jenkinsfile)
+│   ├── terraformPipeline.groovy
+│   ├── sonarqubePipeline.groovy
+│   ├── zapPipeline.groovy
+│   └── eksDeployPipeline.groovy
+├── src/com/portfolio/                   # internal helpers (not exposed)
+│   ├── common/S3.groovy
+│   └── tf/Archiver.groovy
+└── examples/                            # copy these into consumer repos
+    ├── terraform.Jenkinsfile
+    ├── sonarqube.Jenkinsfile
+    ├── zap.Jenkinsfile
+    └── eks-deploy.Jenkinsfile
 ```
 
-## Use from another repo
+## Register in Jenkins
 
-In Jenkins **Manage Jenkins → System → Global Pipeline Libraries**, register
-this repo as `terraform-shared-lib` (default version: `main`).
+**Manage Jenkins → System → Global Pipeline Libraries**
 
-Consumer repo's `Jenkinsfile`:
+- Name: `shared-lib`
+- Default version: `main`
+- Project repo: this repo's URL
+
+## Usage from a consumer repo
+
+Copy the matching example from `examples/` into your repo as `Jenkinsfile`:
 
 ```groovy
-@Library('terraform-shared-lib') _
+@Library('shared-lib') _
 
 terraformPipeline(
-  env:        'uat',
-  workingDir: 'environments/uat',
-  s3Bucket:   'my-cicd-artifacts',
+  environment: params.ENVIRONMENT,
+  s3Bucket:    'my-cicd-artifacts',
+  repoName:    'iac-terraform-showcase-aws',
 )
 ```
 
-## Required Jenkins setup
+## Agent requirements
 
-- Agents labeled `tf-uat`, `tf-staging`, `tf-prod`.
-- Each agent has `terraform`, `aws` CLI, and an IAM role with:
-  - read/write on the Terraform state bucket
-  - write on `s3://<bucket>/datalake/<env>/*`
-- Credentials id `aws-<env>` (optional; agents typically use instance role).
+| Label         | Tools needed                                              |
+| ------------- | --------------------------------------------------------- |
+| `tf-<env>`    | `terraform`, `aws` CLI, IAM access to state + datalake S3 |
+| `sast`        | `sonar-scanner`, SonarQube server reachable               |
+| `dast`        | `docker` (runs `ghcr.io/zaproxy/zaproxy:stable`)          |
+| `eks-<env>`   | `docker`, `aws` CLI, `kubectl`, ECR push + EKS access     |
+
+## Conventions
+
+- **`vars/*Pipeline.groovy`** — public pipelines (anything else here would
+  also be a global step; keep it small).
+- **`src/com/portfolio/...`** — Groovy classes used internally. Not part of
+  the public API.
+- **`examples/*.Jenkinsfile`** — reference snippets to drop into consumer
+  repos. Not executed by this repo.
