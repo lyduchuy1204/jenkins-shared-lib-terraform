@@ -9,7 +9,7 @@
 //     repoName:    'iac-terraform-showcase-aws',
 //   )
 
-import com.portfolio.tf.Archiver
+import com.shared.tf.Archiver
 
 def call(Map cfg) {
   def environment = cfg.environment ?: error('environment is required')

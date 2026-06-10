@@ -1,8 +1,8 @@
-// src/com/portfolio/common/S3.groovy
+// src/com/shared/common/S3.groovy
 //
-// Tiny S3 upload helper. Internal-only (not exposed as a global step).
+// S3 upload helper. Internal-only (not exposed as a global step).
 
-package com.portfolio.common
+package com.shared.common
 
 class S3 implements Serializable {
   def steps

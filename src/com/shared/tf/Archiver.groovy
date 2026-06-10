@@ -1,11 +1,11 @@
-// src/com/portfolio/tf/Archiver.groovy
+// src/com/shared/tf/Archiver.groovy
 //
 // Archives Terraform run artifacts to S3 (datalake layout).
 // Internal helper used by terraformPipeline.
 
-package com.portfolio.tf
+package com.shared.tf
 
-import com.portfolio.common.S3
+import com.shared.common.S3
 
 class Archiver implements Serializable {
   def steps

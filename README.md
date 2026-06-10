@@ -21,7 +21,7 @@ and EKS deployment.
 │   ├── sonarqubePipeline.groovy
 │   ├── zapPipeline.groovy
 │   └── eksDeployPipeline.groovy
-├── src/com/portfolio/                   # internal helpers (not exposed)
+├── src/com/shared/                      # internal helpers (not exposed)
 │   ├── common/S3.groovy
 │   └── tf/Archiver.groovy
 └── examples/                            # copy these into consumer repos
@@ -66,7 +66,7 @@ terraformPipeline(
 
 - **`vars/*Pipeline.groovy`** — public pipelines (anything else here would
   also be a global step; keep it small).
-- **`src/com/portfolio/...`** — Groovy classes used internally. Not part of
+- **`src/com/shared/...`** — Groovy classes used internally. Not part of
   the public API.
 - **`examples/*.Jenkinsfile`** — reference snippets to drop into consumer
   repos. Not executed by this repo.
