@@ -1,16 +1,19 @@
 # jenkins-shared-lib
 
-Minimal Jenkins shared library with reusable pipelines for IaC, SAST, DAST,
-and EKS deployment.
+Reusable Jenkins shared library for IaC, SAST, DAST, and service deploys.
 
 ## Pipelines (`vars/` — public API)
 
-| Pipeline             | Purpose                                        | Agent label        |
-| -------------------- | ---------------------------------------------- | ------------------ |
-| `terraformPipeline`  | Terraform plan/apply per env, archive to S3    | `tf-<env>`         |
-| `sonarqubePipeline`  | SAST scan + SonarQube Quality Gate             | `sast`             |
-| `zapPipeline`        | DAST scan with OWASP ZAP baseline              | `dast`             |
-| `eksDeployPipeline`  | Build → push ECR → deploy EKS → wait rollout   | `eks-<env>`        |
+| Pipeline                | Purpose                                              | Agent label        |
+| ----------------------- | ---------------------------------------------------- | ------------------ |
+| `terraformPipeline`     | Run one Terraform stack of one env, archive to S3    | `tf-<env>`         |
+| `sonarqubePipeline`     | SAST scan + SonarQube Quality Gate                   | `sast`             |
+| `zapPipeline`           | DAST scan with OWASP ZAP baseline                    | `dast`             |
+| `serviceDeployPipeline` | Build → push ECR → deploy to EKS → wait rollout      | `eks-<env>`        |
+
+`terraformPipeline` deploys **one stack at a time** (e.g. `network` or `api`).
+Use a separate Jenkins job per (env, stack) pair so each has independent
+state, history, and approvals.
 
 ## Layout
 
@@ -20,15 +23,16 @@ and EKS deployment.
 │   ├── terraformPipeline.groovy
 │   ├── sonarqubePipeline.groovy
 │   ├── zapPipeline.groovy
-│   └── eksDeployPipeline.groovy
+│   └── serviceDeployPipeline.groovy
 ├── src/com/shared/                      # internal helpers (not exposed)
 │   ├── common/S3.groovy
 │   └── tf/Archiver.groovy
 └── examples/                            # copy these into consumer repos
-    ├── terraform.Jenkinsfile
+    ├── terraform-network.Jenkinsfile    # Terraform: network stack
+    ├── terraform-api.Jenkinsfile        # Terraform: api stack
     ├── sonarqube.Jenkinsfile
     ├── zap.Jenkinsfile
-    └── service-deploy.Jenkinsfile        # build → push ECR → deploy EKS
+    └── service-deploy.Jenkinsfile       # build → push ECR → deploy EKS
 ```
 
 ## Register in Jenkins
@@ -41,13 +45,20 @@ and EKS deployment.
 
 ## Usage from a consumer repo
 
-Copy the matching example from `examples/` into your repo as `Jenkinsfile`:
+Copy the matching example from `examples/` into your repo as `Jenkinsfile`.
+For the Terraform repo `iac-terraform-showcase-aws`, create **two Jenkins
+jobs**:
+
+- One using `terraform-network.Jenkinsfile` — deploy the network stack.
+- One using `terraform-api.Jenkinsfile` — deploy the api stack
+  (run **after** network on the same env).
 
 ```groovy
 @Library('shared-lib') _
 
 terraformPipeline(
   environment: params.ENVIRONMENT,
+  stack:       'api',
   s3Bucket:    'my-cicd-artifacts',
   repoName:    'iac-terraform-showcase-aws',
 )
@@ -64,9 +75,9 @@ terraformPipeline(
 
 ## Conventions
 
-- **`vars/*Pipeline.groovy`** — public pipelines (anything else here would
-  also be a global step; keep it small).
-- **`src/com/shared/...`** — Groovy classes used internally. Not part of
-  the public API.
+- **`vars/*Pipeline.groovy`** — public pipelines. Anything else placed in
+  `vars/` would also become a global step; keep it small and intentional.
+- **`src/com/shared/...`** — Groovy classes used internally by pipelines.
+  Not part of the public API.
 - **`examples/*.Jenkinsfile`** — reference snippets to drop into consumer
   repos. Not executed by this repo.
