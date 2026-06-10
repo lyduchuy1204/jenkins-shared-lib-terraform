@@ -10,6 +10,7 @@ Reusable Jenkins shared library for IaC, SAST, DAST, and service deploys.
 | `sonarqubePipeline`     | SAST scan + SonarQube Quality Gate                   | `sast`             |
 | `zapPipeline`           | DAST scan with OWASP ZAP baseline                    | `dast`             |
 | `serviceDeployPipeline` | Build → push ECR → deploy to EKS → wait rollout      | `eks-<env>`        |
+| `rdsSecretRotatePipeline` | Trigger AWS Secrets Manager rotation + smoke test  | `secops-<env>`     |
 
 `terraformPipeline` deploys **one stack at a time** (e.g. `network` or `api`).
 Use a separate Jenkins job per (env, stack) pair so each has independent
@@ -23,16 +24,21 @@ state, history, and approvals.
 │   ├── terraformPipeline.groovy
 │   ├── sonarqubePipeline.groovy
 │   ├── zapPipeline.groovy
-│   └── serviceDeployPipeline.groovy
+│   ├── serviceDeployPipeline.groovy
+│   └── rdsSecretRotatePipeline.groovy
 ├── src/com/shared/                      # internal helpers (not exposed)
 │   ├── common/S3.groovy
 │   └── tf/Archiver.groovy
+├── resources/                           # files loaded by libraryResource()
+│   └── python/
+│       └── rotate_rds_secret.py
 └── examples/                            # copy these into consumer repos
     ├── terraform-network.Jenkinsfile    # Terraform: network stack
     ├── terraform-api.Jenkinsfile        # Terraform: api stack
     ├── sonarqube.Jenkinsfile
     ├── zap.Jenkinsfile
-    └── service-deploy.Jenkinsfile       # build → push ECR → deploy EKS
+    ├── service-deploy.Jenkinsfile       # build → push ECR → deploy EKS
+    └── rds-secret-rotate.Jenkinsfile    # AWS Secrets Manager rotation + verify
 ```
 
 ## Register in Jenkins
@@ -68,10 +74,11 @@ terraformPipeline(
 
 | Label         | Tools needed                                              |
 | ------------- | --------------------------------------------------------- |
-| `tf-<env>`    | `terraform`, `aws` CLI, IAM access to state + datalake S3 |
-| `sast`        | `sonar-scanner`, SonarQube server reachable               |
-| `dast`        | `docker` (runs `ghcr.io/zaproxy/zaproxy:stable`)          |
-| `eks-<env>`   | `docker`, `aws` CLI, `kubectl`, ECR push + EKS access     |
+| `tf-<env>`     | `terraform`, `aws` CLI, IAM access to state + datalake S3 |
+| `sast`         | `sonar-scanner`, SonarQube server reachable               |
+| `dast`         | `docker` (runs `ghcr.io/zaproxy/zaproxy:stable`)          |
+| `eks-<env>`    | `docker`, `aws` CLI, `kubectl`, ECR push + EKS access     |
+| `secops-<env>` | `python3` (with `boto3`), `aws` CLI credentials, IAM `secretsmanager:RotateSecret` |
 
 ## Conventions
 
